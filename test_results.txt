@@ -1,0 +1,140 @@
+d:\coding\lstm\daily_stock_analysis\test_apis.py:107: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+10:16:40 | INFO     | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+10:16:45 | INFO     | HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+10:16:54 | INFO     | HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+10:16:59 | INFO     | HTTP Request: POST https://api.chatanywhere.tech/v1/chat/completions "HTTP/1.1 200 OK"
+10:17:01 | INFO     | Note: NumExpr detected 20 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+10:17:01 | INFO     | NumExpr defaulting to 8 threads.
+10:17:02 | INFO     | Tushare API 初始化成功
+10:17:02 | INFO     | [TushareFetcher] 获取 600519 数据: 2026-02-02 ~ 2026-02-08
+10:17:04 | INFO     | [TushareFetcher] 600519 获取成功，共 5 条数据
+10:17:04 | INFO     | [AkshareFetcher] 获取 600519 数据: 2026-02-02 ~ 2026-02-08
+C:\Users\廖晨扬\AppData\Roaming\Python\Python312\site-packages\py_mini_racer\py_mini_racer.py:13: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+10:17:10 | INFO     | [API调用] ak.stock_zh_a_hist(symbol=600519, period=daily, start_date=20260202, end_date=20260208, adjust=qfq)
+10:17:12 | INFO     | [API返回] ak.stock_zh_a_hist 成功: 返回 5 行数据, 耗时 1.31s
+10:17:12 | INFO     | [API返回] 列名: ['日期', '股票代码', '开盘', '收盘', '最高', '最低', '成交量', '成交额', '振幅', '涨跌幅', '涨跌额', '换手率']
+10:17:12 | INFO     | [API返回] 日期范围: 2026-02-02 ~ 2026-02-06
+10:17:12 | INFO     | [AkshareFetcher] 600519 获取成功，共 5 条数据
+10:17:12 | INFO     | [BaostockFetcher] 获取 600519 数据: 2026-02-02 ~ 2026-02-08
+10:17:14 | INFO     | [BaostockFetcher] 600519 获取成功，共 5 条数据
+
+==================================================
+  A股自选股智能分析系统 - API 测试
+  测试时间: 2026-02-08 10:06:29
+==================================================
+
+============================================================
+  1. 配置检查
+============================================================
+
+--- AI 提供商配置 ---
+  当前 AI_PROVIDER: deepseek
+  活动提供商: deepseek
+  活动模型: deepseek-chat
+
+--- 已配置的 API Key ---
+  Gemini API:     AIzaSyA2...aB8I
+  OpenRouter API: sk-or-v1...8a05
+  DeepSeek API:   sk-9a5b6...a4c4
+  DashScope API:  sk-57929...4b23
+  OpenAI API:     sk-NTo6F...MSrf
+
+--- 搜索引擎配置 ---
+  Tavily API:     已配置 (1 个 key)
+  SerpAPI:        未配置
+
+--- Gemini API 测试 ---
+  API Key: AIzaSyA2...aB8I
+  主模型: gemini-3-flash-preview
+  正在发送测试请求...
+  [X] API 调用失败: Timeout of 600.0s exceeded, last exception: 503 failed to connect to all addresses; last error: UNAVAILABLE: ipv4:142.251.46.74:443: ConnectEx: Connection timed out (A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+ -- 10060)
+
+--- OPENROUTER API 测试 ---
+  API Key: sk-or-v1...8a05
+  Base URL: https://openrouter.ai/api/v1
+  模型: anthropic/claude-3.5-sonnet
+  正在发送测试请求...
+  [OK] API 调用成功 (耗时: 3.85秒)
+  响应: 我是 Claude，一个人工智能助手，旨在通过对话提供帮助。...
+
+--- DEEPSEEK API 测试 ---
+  API Key: sk-9a5b6...a4c4
+  Base URL: https://api.deepseek.com/v1
+  模型: deepseek-chat
+  正在发送测试请求...
+  [OK] API 调用成功 (耗时: 2.44秒)
+  响应: 你好，我是DeepSeek，一个由深度求索公司创造的AI助手，致力于用热情和智慧为你提供帮助！...
+
+--- DASHSCOPE API 测试 ---
+  API Key: sk-57929...4b23
+  Base URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+  模型: qwen-plus
+  正在发送测试请求...
+  [OK] API 调用成功 (耗时: 3.41秒)
+  响应: 你好！我是通义千问（Qwen），阿里巴巴集团旗下的超大规模语言模型，能够回答问题、创作文字（如写故事、公文、邮件、剧本等）、进行逻辑推理、编程，还能表达观点，甚至玩游戏，支持多种语言，致力于为你提供高...
+
+--- OPENAI API 测试 ---
+  API Key: sk-NTo6F...MSrf
+  Base URL: https://api.chatanywhere.tech/v1
+  模型: gpt-4o-mini
+  正在发送测试请求...
+  [OK] API 调用成功 (耗时: 1.52秒)
+  响应: 你好！我是一个人工智能助手，旨在提供信息和帮助解决各种问题。...
+
+--- Tavily 搜索 API 测试 ---
+  API Key: tvly-dev...2tcX
+  正在发送测试搜索请求...
+  [OK] API 调用成功 (耗时: 1.60秒)
+  找到 3 条结果
+
+--- 数据源 API 测试 ---
+
+--- Tushare 数据源 ---
+  Token: 69928e00...62b0
+  正在测试连接...
+  [OK] 数据获取成功 (耗时: 1.57秒)
+  获取到 5 条数据
+
+--- AkShare 数据源 ---
+  正在测试连接...
+  已禁用代理设置
+  [OK] 数据获取成功 (耗时: 8.06秒)
+  获取到 5 条数据
+
+--- Baostock 数据源 ---
+  正在测试连接...
+login success!
+logout success!
+  [OK] 数据获取成功 (耗时: 2.76秒)
+  获取到 5 条数据
+
+--- YFinance 数据源 ---
+  [!] YFinance 主要用于美股，对A股支持有限
+  跳过测试
+
+============================================================
+  测试结果汇总
+============================================================
+  [X] 失败: Gemini API
+  [OK] 通过: OpenRouter API
+  [OK] 通过: DeepSeek API
+  [OK] 通过: DashScope API
+  [OK] 通过: OpenAI API
+  [OK] 通过: Tavily 搜索 API
+  [OK] 通过: Tushare 数据源
+  [OK] 通过: AkShare 数据源
+  [OK] 通过: Baostock 数据源
+
+总计: 8/9 个 API 测试通过
+
+*** 部分 API 测试失败，请检查配置和网络连接 ***
