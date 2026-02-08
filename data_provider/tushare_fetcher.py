@@ -16,6 +16,7 @@ TushareFetcher - 备用数据源 1 (Priority 2)
 
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -32,6 +33,21 @@ from .base import BaseFetcher, DataFetchError, RateLimitError, STANDARD_COLUMNS
 from config import get_config
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StockBasicInfo:
+    """
+    股票基础信息
+
+    包含股票的基本元数据
+    """
+    code: str           # 股票代码
+    name: str = ""      # 股票名称
+    industry: str = ""  # 所属行业
+    area: str = ""      # 所在地域
+    market: str = ""    # 市场类型（主板/科创板/创业板）
+    list_date: str = "" # 上市日期
 
 
 class TushareFetcher(BaseFetcher):
@@ -263,8 +279,72 @@ class TushareFetcher(BaseFetcher):
         keep_cols = ['code'] + STANDARD_COLUMNS
         existing_cols = [col for col in keep_cols if col in df.columns]
         df = df[existing_cols]
-        
+
         return df
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
+    def get_stock_basic_info(self, stock_code: str) -> Optional[StockBasicInfo]:
+        """
+        获取股票基础信息
+
+        使用 Tushare stock_basic() 接口获取股票名称、行业等基础信息
+
+        Args:
+            stock_code: 股票代码，如 '600519'
+
+        Returns:
+            StockBasicInfo 对象，失败时返回 None
+        """
+        if self._api is None:
+            logger.warning("Tushare API 未初始化，无法获取股票基础信息")
+            return None
+
+        # 速率限制检查
+        self._check_rate_limit()
+
+        # 转换代码格式
+        ts_code = self._convert_stock_code(stock_code)
+
+        logger.debug(f"调用 Tushare stock_basic({ts_code})")
+
+        try:
+            # 调用 stock_basic 接口
+            df = self._api.stock_basic(
+                ts_code=ts_code,
+                fields='ts_code,symbol,name,industry,area,market,list_date'
+            )
+
+            if df is None or df.empty:
+                logger.warning(f"Tushare 未找到股票 {stock_code} 的基础信息")
+                return None
+
+            # 提取第一行数据
+            row = df.iloc[0]
+
+            return StockBasicInfo(
+                code=stock_code,
+                name=row.get('name', ''),
+                industry=row.get('industry', ''),
+                area=row.get('area', ''),
+                market=row.get('market', ''),
+                list_date=str(row.get('list_date', ''))
+            )
+
+        except Exception as e:
+            error_msg = str(e).lower()
+
+            # 检测配额超限
+            if any(keyword in error_msg for keyword in ['quota', '配额', 'limit', '权限']):
+                logger.warning(f"Tushare 配额可能超限: {e}")
+                raise RateLimitError(f"Tushare 配额超限: {e}") from e
+
+            logger.error(f"Tushare 获取股票基础信息失败: {e}")
+            return None
 
 
 if __name__ == "__main__":

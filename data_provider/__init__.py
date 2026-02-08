@@ -11,16 +11,17 @@
 """
 
 from .base import BaseFetcher, DataFetcherManager
-from .akshare_fetcher import AkshareFetcher
-from .tushare_fetcher import TushareFetcher
+# from .akshare_fetcher import AkshareFetcher  # 已禁用：SSL/proxy 错误
+from .tushare_fetcher import TushareFetcher, StockBasicInfo
 from .baostock_fetcher import BaostockFetcher
 from .yfinance_fetcher import YfinanceFetcher
 
 __all__ = [
     'BaseFetcher',
     'DataFetcherManager',
-    'AkshareFetcher',
+    # 'AkshareFetcher',  # 已禁用：SSL/proxy 错误
     'TushareFetcher',
+    'StockBasicInfo',  # Tushare 股票基础信息
     'BaostockFetcher',
     'YfinanceFetcher',
 ]

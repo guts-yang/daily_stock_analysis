@@ -34,6 +34,11 @@ class Config:
     feishu_app_secret: Optional[str] = None
     feishu_folder_token: Optional[str] = None
 
+    # Feishu Bitable (多维表格)
+    feishu_table_token: Optional[str] = None
+    feishu_app_id_bitable: Optional[str] = None
+    feishu_app_secret_bitable: Optional[str] = None
+
     # Data source tokens
     tushare_token: Optional[str] = None
     
@@ -151,19 +156,56 @@ class Config:
         """
         env_path = Path(__file__).parent / '.env'
         load_dotenv(dotenv_path=env_path)
-        
-        # Parse watchlist (comma-separated)
+
+        # Parse watchlist (支持多种来源)
         stock_list_str = os.getenv('STOCK_LIST', '')
-        stock_list = [
-            code.strip() 
-            for code in stock_list_str.split(',') 
-            if code.strip()
-        ]
-        
+        stock_list_file = os.getenv('STOCK_LIST_FILE', '')
+        use_feishu_bitable = os.getenv('USE_FEISHU_BITABLE', 'false').lower() == 'true'
+
+        stock_list = []
+
+        # 优先级 1: 从飞书多维表格读取
+        if use_feishu_bitable:
+            try:
+                from feishu_bitable import get_stock_list_from_feishu
+                stock_list = get_stock_list_from_feishu()
+                if stock_list:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"从飞书多维表格读取到 {len(stock_list)} 只股票")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"从飞书多维表格读取股票列表失败: {e}")
+
+        # 优先级 2: 从文本文件读取
+        if not stock_list and stock_list_file:
+            file_path = Path(stock_list_file)
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        stock_list = [
+                            line.strip()
+                            for line in f.readlines()
+                            if line.strip() and not line.strip().startswith('#')
+                        ]
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"从文件 {stock_list_file} 读取股票列表失败: {e}")
+
+        # 优先级 3: 从环境变量读取
+        if not stock_list and stock_list_str:
+            stock_list = [
+                code.strip()
+                for code in stock_list_str.split(',')
+                if code.strip()
+            ]
+
         # Defaults if not configured
         if not stock_list:
             stock_list = ['600519', '000001', '300750']
-        
+
         # Search engine API keys (comma-separated)
         tavily_keys_str = os.getenv('TAVILY_API_KEYS', '')
         tavily_api_keys = [k.strip() for k in tavily_keys_str.split(',') if k.strip()]
@@ -176,6 +218,9 @@ class Config:
             feishu_app_id=os.getenv('FEISHU_APP_ID'),
             feishu_app_secret=os.getenv('FEISHU_APP_SECRET'),
             feishu_folder_token=os.getenv('FEISHU_FOLDER_TOKEN'),
+            feishu_table_token=os.getenv('FEISHU_TABLE_TOKEN'),
+            feishu_app_id_bitable=os.getenv('FEISHU_APP_ID_BITABLE'),
+            feishu_app_secret_bitable=os.getenv('FEISHU_APP_SECRET_BITABLE'),
             tushare_token=os.getenv('TUSHARE_TOKEN'),
             ai_provider=os.getenv('AI_PROVIDER', 'auto'),
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
@@ -342,21 +387,7 @@ class Config:
                 'model': self.openai_model,
             }
 
-        # 自动模式：按优先级查找第一个可用的
-        if self.gemini_api_key:
-            return {
-                'provider': 'gemini',
-                'api_key': self.gemini_api_key,
-                'model': self.gemini_model,
-                'model_fallback': self.gemini_model_fallback,
-            }
-        if self.openrouter_api_key:
-            return {
-                'provider': 'openrouter',
-                'api_key': self.openrouter_api_key,
-                'base_url': self.openrouter_base_url,
-                'model': self.openrouter_model,
-            }
+        # 自动模式：按优先级查找第一个可用的（DeepSeek > Qwen > OpenAI > Claude > Gemini）
         if self.deepseek_api_key:
             return {
                 'provider': 'deepseek',
@@ -377,6 +408,20 @@ class Config:
                 'api_key': self.openai_api_key,
                 'base_url': self.openai_base_url,
                 'model': self.openai_model,
+            }
+        if self.openrouter_api_key:
+            return {
+                'provider': 'openrouter',
+                'api_key': self.openrouter_api_key,
+                'base_url': self.openrouter_base_url,
+                'model': self.openrouter_model,
+            }
+        if self.gemini_api_key:
+            return {
+                'provider': 'gemini',
+                'api_key': self.gemini_api_key,
+                'model': self.gemini_model,
+                'model_fallback': self.gemini_model_fallback,
             }
 
         # 没有可用的 AI 配置

@@ -43,7 +43,7 @@ from feishu_doc import FeishuDocManager
 
 from config import get_config, Config
 from storage import get_db, DatabaseManager
-from data_provider import DataFetcherManager
+from data_provider import DataFetcherManager, TushareFetcher, StockBasicInfo
 from data_provider.akshare_fetcher import AkshareFetcher, RealtimeQuote, ChipDistribution
 from analyzer import GeminiAnalyzer, AnalysisResult, STOCK_NAME_MAP
 from notification import NotificationService, NotificationChannel, send_daily_report
@@ -232,25 +232,38 @@ class StockAnalysisPipeline:
             AnalysisResult 或 None（如果分析失败）
         """
         try:
-            # 获取股票名称（优先从实时行情获取真实名称）
+            # 获取股票名称（优先从 Tushare 获取）
             stock_name = STOCK_NAME_MAP.get(code, '')
-            
-            # Step 1: 获取实时行情（量比、换手率等）
+
+            # Step 1: 尝试从 Tushare 获取股票基础信息
+            tushare_fetcher = next((f for f in self.fetcher_manager._fetchers if isinstance(f, TushareFetcher)), None)
+            if tushare_fetcher:
+                try:
+                    basic_info: Optional[StockBasicInfo] = tushare_fetcher.get_stock_basic_info(code)
+                    if basic_info and basic_info.name:
+                        stock_name = basic_info.name
+                        logger.info(f"[{code}] 股票名称: {stock_name} (来源: Tushare)")
+                        logger.debug(f"[{code}] 行业: {basic_info.industry}, 地域: {basic_info.area}, 市场: {basic_info.market}")
+                except Exception as e:
+                    logger.warning(f"[{code}] 从 Tushare 获取股票名称失败: {e}")
+
+            # Step 2: 如果还是没有名称，尝试从 AkShare 获取实时行情
             realtime_quote: Optional[RealtimeQuote] = None
-            try:
-                realtime_quote = self.akshare_fetcher.get_realtime_quote(code)
-                if realtime_quote:
-                    # 使用实时行情返回的真实股票名称
-                    if realtime_quote.name:
+            if not stock_name or stock_name.startswith('股票'):
+                try:
+                    realtime_quote = self.akshare_fetcher.get_realtime_quote(code)
+                    if realtime_quote and realtime_quote.name:
                         stock_name = realtime_quote.name
-                    logger.info(f"[{code}] {stock_name} 实时行情: 价格={realtime_quote.price}, "
-                              f"量比={realtime_quote.volume_ratio}, 换手率={realtime_quote.turnover_rate}%")
-            except Exception as e:
-                logger.warning(f"[{code}] 获取实时行情失败: {e}")
-            
+                        logger.info(f"[{code}] 股票名称: {stock_name} (来源: AkShare)")
+                        logger.info(f"[{code}] 实时行情: 价格={realtime_quote.price}, "
+                                  f"量比={realtime_quote.volume_ratio}, 换手率={realtime_quote.turnover_rate}%")
+                except Exception as e:
+                    logger.warning(f"[{code}] 获取实时行情失败: {e}")
+
             # 如果还是没有名称，使用代码作为名称
             if not stock_name:
                 stock_name = f'股票{code}'
+                logger.warning(f"[{code}] 未找到股票名称，使用默认名称: {stock_name}")
             
             # Step 2: 获取筹码分布
             chip_data: Optional[ChipDistribution] = None

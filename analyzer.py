@@ -385,50 +385,42 @@ class GeminiAnalyzer:
     def __init__(self, api_key: Optional[str] = None):
         """
         初始化 AI 分析器
-        
-        优先级根据配置决定
-        
+
+        优先级根据配置决定（DeepSeek > Qwen > OpenAI > Claude > Gemini）
+
         Args:
-            api_key: Gemini API Key（可选，默认从配置读取）
+            api_key: 已废弃，保留用于兼容性（默认从配置读取）
         """
         config = get_config()
-        self._api_key = api_key or config.gemini_api_key
         self._model = None
         self._current_model_name = None  # 当前使用的模型名称
         self._using_fallback = False  # 是否正在使用备选模型
         self._use_openai = False  # 是否使用 OpenAI 兼容 API
         self._openai_client = None  # OpenAI 客户端
-        
-        # 检查 Gemini API Key 是否有效（过滤占位符）
-        gemini_key_valid = self._api_key and not self._api_key.startswith('your_') and len(self._api_key) > 10
-        
-        # 根据配置决定优先级
-        if getattr(config, "openai_preferred", False):
-            self._init_openai_fallback()
-            if gemini_key_valid:
-                try:
-                    self._init_model()
-                except Exception as e:
-                    logger.warning(f"Gemini 初始化失败: {e}")
+        self._ai_provider = None  # 当前使用的 AI 提供商
+
+        # 获取活动的 AI 配置（按优先级顺序）
+        ai_config = config.get_active_ai_config()
+
+        if not ai_config:
+            logger.warning("未配置任何 AI 服务 API Key，AI 分析功能将不可用")
+            return
+
+        self._ai_provider = ai_config['provider']
+        logger.info(f"AI 提供商: {self._ai_provider}")
+
+        # 根据提供商类型初始化
+        if self._ai_provider == 'gemini':
+            self._init_gemini(ai_config)
+        elif self._ai_provider in ['openrouter', 'deepseek', 'dashscope', 'openai']:
+            self._init_openai_compatible(ai_config)
         else:
-            if gemini_key_valid:
-                try:
-                    self._init_model()
-                except Exception as e:
-                    logger.warning(f"Gemini 初始化失败: {e}，尝试 OpenAI 兼容 API")
-                    self._init_openai_fallback()
-            else:
-                logger.info("Gemini API Key 未配置，尝试使用 OpenAI 兼容 API")
-                self._init_openai_fallback()
-        
-        # 两者都未配置
-        if not self._model and not self._openai_client:
-            logger.warning("未配置任何 AI API Key，AI 分析功能将不可用")
+            logger.warning(f"未知的 AI 提供商: {self._ai_provider}")
     
     def _init_openai_fallback(self) -> None:
         """
-        初始化 OpenAI 兼容 API 作为备选
-        
+        初始化 OpenAI 兼容 API 作为备选（已废弃，保留用于兼容性）
+
         支持所有 OpenAI 格式的 API，包括：
         - OpenAI 官方
         - DeepSeek
@@ -436,31 +428,31 @@ class GeminiAnalyzer:
         - Moonshot 等
         """
         config = get_config()
-        
+
         # 检查 OpenAI API Key 是否有效（过滤占位符）
         openai_key_valid = (
-            config.openai_api_key and 
-            not config.openai_api_key.startswith('your_') and 
+            config.openai_api_key and
+            not config.openai_api_key.startswith('your_') and
             len(config.openai_api_key) > 10
         )
-        
+
         if not openai_key_valid:
             logger.debug("OpenAI 兼容 API 未配置或配置无效")
             return
-        
+
         # 分离 import 和客户端创建，以便提供更准确的错误信息
         try:
             from openai import OpenAI
         except ImportError:
             logger.error("未安装 openai 库，请运行: pip install openai")
             return
-        
+
         try:
             # base_url 可选，不填则使用 OpenAI 官方默认地址
             client_kwargs = {"api_key": config.openai_api_key}
             if config.openai_base_url and config.openai_base_url.startswith('http'):
                 client_kwargs["base_url"] = config.openai_base_url
-            
+
             self._openai_client = OpenAI(**client_kwargs)
             self._current_model_name = config.openai_model
             self._use_openai = True
@@ -477,6 +469,95 @@ class GeminiAnalyzer:
                 logger.error(f"OpenAI 代理配置错误: {e}，如使用 SOCKS 代理请运行: pip install httpx[socks]")
             else:
                 logger.error(f"OpenAI 兼容 API 初始化失败: {e}")
+
+    def _init_gemini(self, ai_config: dict) -> None:
+        """
+        初始化 Gemini API
+
+        Args:
+            ai_config: AI 配置字典，包含 provider, api_key, model 等
+        """
+        api_key = ai_config['api_key']
+        model_name = ai_config.get('model', 'gemini-2.5-flash')
+        fallback_model = ai_config.get('model_fallback', 'gemini-2.5-flash')
+
+        try:
+            import google.generativeai as genai
+
+            # 配置 API Key
+            genai.configure(api_key=api_key)
+
+            # 尝试初始化主模型
+            try:
+                self._model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=self.SYSTEM_PROMPT,
+                )
+                self._current_model_name = model_name
+                self._using_fallback = False
+                logger.info(f"Gemini 模型初始化成功 (模型: {model_name})")
+            except Exception as model_error:
+                # 尝试备选模型
+                logger.warning(f"主模型 {model_name} 初始化失败: {model_error}，尝试备选模型 {fallback_model}")
+                self._model = genai.GenerativeModel(
+                    model_name=fallback_model,
+                    system_instruction=self.SYSTEM_PROMPT,
+                )
+                self._current_model_name = fallback_model
+                self._using_fallback = True
+                logger.info(f"Gemini 备选模型初始化成功 (模型: {fallback_model})")
+
+        except Exception as e:
+            logger.error(f"Gemini 模型初始化失败: {e}")
+            self._model = None
+
+    def _init_openai_compatible(self, ai_config: dict) -> None:
+        """
+        初始化 OpenAI 兼容 API
+
+        支持的提供商：
+        - DeepSeek
+        - DashScope (通义千问)
+        - OpenRouter (Claude 等)
+        - OpenAI 官方
+
+        Args:
+            ai_config: AI 配置字典，包含 provider, api_key, base_url, model 等
+        """
+        provider = ai_config['provider']
+        api_key = ai_config['api_key']
+        base_url = ai_config.get('base_url')
+        model = ai_config.get('model', 'gpt-4o-mini')
+
+        # 分离 import 和客户端创建，以便提供更准确的错误信息
+        try:
+            from openai import OpenAI
+        except ImportError:
+            logger.error("未安装 openai 库，请运行: pip install openai")
+            return
+
+        try:
+            # 构建 client_kwargs
+            client_kwargs = {"api_key": api_key}
+            if base_url and base_url.startswith('http'):
+                client_kwargs["base_url"] = base_url
+
+            self._openai_client = OpenAI(**client_kwargs)
+            self._current_model_name = model
+            self._use_openai = True
+            logger.info(f"{provider.capitalize()} API 初始化成功 (base_url: {base_url}, model: {model})")
+        except ImportError as e:
+            # 依赖缺失（如 socksio）
+            if 'socksio' in str(e).lower() or 'socks' in str(e).lower():
+                logger.error(f"{provider.capitalize()} 客户端需要 SOCKS 代理支持，请运行: pip install httpx[socks] 或 pip install socksio")
+            else:
+                logger.error(f"{provider.capitalize()} 依赖缺失: {e}")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'socks' in error_msg or 'socksio' in error_msg or 'proxy' in error_msg:
+                logger.error(f"{provider.capitalize()} 代理配置错误: {e}，如使用 SOCKS 代理请运行: pip install httpx[socks]")
+            else:
+                logger.error(f"{provider.capitalize()} API 初始化失败: {e}")
     
     def _init_model(self) -> None:
         """
@@ -556,26 +637,29 @@ class GeminiAnalyzer:
     def _call_openai_api(self, prompt: str, generation_config: dict) -> str:
         """
         调用 OpenAI 兼容 API
-        
+
         Args:
             prompt: 提示词
             generation_config: 生成配置
-            
+
         Returns:
             响应文本
         """
         config = get_config()
         max_retries = config.gemini_max_retries
         base_delay = config.gemini_retry_delay
-        
+
+        # 使用提供商名称（如果设置）否则默认为 "OpenAI"
+        provider_name = getattr(self, '_ai_provider', 'openai').capitalize()
+
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     delay = base_delay * (2 ** (attempt - 1))
                     delay = min(delay, 60)
-                    logger.info(f"[OpenAI] 第 {attempt + 1} 次重试，等待 {delay:.1f} 秒...")
+                    logger.info(f"[{provider_name}] 第 {attempt + 1} 次重试，等待 {delay:.1f} 秒...")
                     time.sleep(delay)
-                
+
                 response = self._openai_client.chat.completions.create(
                     model=self._current_model_name,
                     messages=[
@@ -585,56 +669,57 @@ class GeminiAnalyzer:
                     temperature=generation_config.get('temperature', 0.7),
                     max_tokens=generation_config.get('max_output_tokens', 8192),
                 )
-                
+
                 if response and response.choices and response.choices[0].message.content:
                     return response.choices[0].message.content
                 else:
-                    raise ValueError("OpenAI API 返回空响应")
-                    
+                    raise ValueError(f"{provider_name} API 返回空响应")
+
             except Exception as e:
                 error_str = str(e)
                 is_rate_limit = '429' in error_str or 'rate' in error_str.lower() or 'quota' in error_str.lower()
-                
+
                 if is_rate_limit:
-                    logger.warning(f"[OpenAI] API 限流，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
+                    logger.warning(f"[{provider_name}] API 限流，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
                 else:
-                    logger.warning(f"[OpenAI] API 调用失败，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
-                
+                    logger.warning(f"[{provider_name}] API 调用失败，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
+
                 if attempt == max_retries - 1:
                     raise
-        
-        raise Exception("OpenAI API 调用失败，已达最大重试次数")
+
+        raise Exception(f"{provider_name} API 调用失败，已达最大重试次数")
     
     def _call_api_with_retry(self, prompt: str, generation_config: dict) -> str:
         """
         调用 AI API，带有重试和模型切换机制
-        
-        优先级可配置
-        
+
+        优先级根据配置决定（DeepSeek > Qwen > OpenAI > Claude > Gemini）
+
         处理 429 限流错误：
         1. 先指数退避重试
         2. 多次失败后切换到备选模型
         3. Gemini 完全失败后尝试 OpenAI
-        
+
         Args:
             prompt: 提示词
             generation_config: 生成配置
-            
+
         Returns:
             响应文本
         """
         config = get_config()
-        if getattr(config, "openai_preferred", False) and self._openai_client:
+
+        # 如果使用 OpenAI 兼容 API，直接调用
+        if self._use_openai and self._openai_client:
             return self._call_openai_api(prompt, generation_config)
-        
-        if self._use_openai:
-            return self._call_openai_api(prompt, generation_config)
+
+        # 使用 Gemini API
         max_retries = config.gemini_max_retries
         base_delay = config.gemini_retry_delay
-        
+
         last_error = None
         tried_fallback = getattr(self, '_using_fallback', False)
-        
+
         for attempt in range(max_retries):
             try:
                 # 请求前增加延时（防止请求过快触发限流）
@@ -643,28 +728,28 @@ class GeminiAnalyzer:
                     delay = min(delay, 60)  # 最大60秒
                     logger.info(f"[Gemini] 第 {attempt + 1} 次重试，等待 {delay:.1f} 秒...")
                     time.sleep(delay)
-                
+
                 response = self._model.generate_content(
                     prompt,
                     generation_config=generation_config,
                     request_options={"timeout": config.gemini_request_timeout}
                 )
-                
+
                 if response and response.text:
                     return response.text
                 else:
                     raise ValueError("Gemini 返回空响应")
-                    
+
             except Exception as e:
                 last_error = e
                 error_str = str(e)
-                
+
                 # 检查是否是 429 限流错误
                 is_rate_limit = '429' in error_str or 'quota' in error_str.lower() or 'rate' in error_str.lower()
-                
+
                 if is_rate_limit:
                     logger.warning(f"[Gemini] API 限流 (429)，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
-                    
+
                     # 如果已经重试了一半次数且还没切换过备选模型，尝试切换
                     if attempt >= max_retries // 2 and not tried_fallback:
                         if self._switch_to_fallback_model():
@@ -675,7 +760,7 @@ class GeminiAnalyzer:
                 else:
                     # 非限流错误，记录并继续重试
                     logger.warning(f"[Gemini] API 调用失败，第 {attempt + 1}/{max_retries} 次尝试: {error_str[:100]}")
-        
+
         # Gemini 所有重试都失败，尝试 OpenAI 兼容 API
         if self._openai_client:
             logger.warning("[Gemini] 所有重试失败，切换到 OpenAI 兼容 API")
@@ -694,7 +779,7 @@ class GeminiAnalyzer:
                 except Exception as openai_error:
                     logger.error(f"[OpenAI] 备选 API 也失败: {openai_error}")
                     raise last_error or openai_error
-        
+
         # 所有方式都失败
         raise last_error or Exception("所有 AI API 调用失败，已达最大重试次数")
     

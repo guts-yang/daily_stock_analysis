@@ -259,29 +259,30 @@ class DataFetcherManager:
     def _init_default_fetchers(self) -> None:
         """
         初始化默认数据源列表
-        
+
         按优先级排序：
-        1. AkshareFetcher (Priority 1)
-        2. TushareFetcher (Priority 2)
-        3. BaostockFetcher (Priority 3)
-        4. YfinanceFetcher (Priority 4)
+        1. TushareFetcher (Priority 2) - 主要数据源
+        2. BaostockFetcher (Priority 3)
+        3. YfinanceFetcher (Priority 4)
+
+        注意：AkshareFetcher 已注释掉，使用 Tushare 作为主要数据源
         """
-        from .akshare_fetcher import AkshareFetcher
+        # from .akshare_fetcher import AkshareFetcher  # 已禁用：SSL/proxy 错误
         from .tushare_fetcher import TushareFetcher
         from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
-        
+
         self._fetchers = [
-            AkshareFetcher(),
+            # AkshareFetcher(),  # 已禁用：SSL/proxy 错误，使用 Tushare 代替
             TushareFetcher(),
             BaostockFetcher(),
             YfinanceFetcher(),
         ]
-        
+
         # 按优先级排序
         self._fetchers.sort(key=lambda f: f.priority)
-        
-        logger.info(f"已初始化 {len(self._fetchers)} 个数据源: " + 
+
+        logger.info(f"已初始化 {len(self._fetchers)} 个数据源: " +
                    ", ".join([f.name for f in self._fetchers]))
     
     def add_fetcher(self, fetcher: BaseFetcher) -> None:
