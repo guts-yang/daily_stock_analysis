@@ -51,6 +51,19 @@ reports/
 *.db
 *.sqlite
 *.sqlite3
+*.log
+
+# 生成的图片和媒体文件
+sources/*.gif
+sources/*.png
+sources/*.jpg
+sources/*.jpeg
+
+# 临时文件
+test_results.txt
+*.tmp
+*.bak
+*.swp
 
 # 系统文件
 .DS_Store

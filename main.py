@@ -232,23 +232,25 @@ class StockAnalysisPipeline:
             AnalysisResult 或 None（如果分析失败）
         """
         try:
-            # 获取股票名称（优先从 Tushare 获取）
+            # 获取股票名称（多级容错）
             stock_name = STOCK_NAME_MAP.get(code, '')
 
             # Step 1: 尝试从 Tushare 获取股票基础信息
-            tushare_fetcher = next((f for f in self.fetcher_manager._fetchers if isinstance(f, TushareFetcher)), None)
-            if tushare_fetcher:
-                try:
+            try:
+                # 查找 TushareFetcher 数据源
+                tushare_fetcher = next((f for f in self.fetcher_manager._fetchers if isinstance(f, TushareFetcher)), None)
+                if tushare_fetcher:
                     basic_info: Optional[StockBasicInfo] = tushare_fetcher.get_stock_basic_info(code)
                     if basic_info and basic_info.name:
                         stock_name = basic_info.name
                         logger.info(f"[{code}] 股票名称: {stock_name} (来源: Tushare)")
-                        logger.debug(f"[{code}] 行业: {basic_info.industry}, 地域: {basic_info.area}, 市场: {basic_info.market}")
-                except Exception as e:
-                    logger.warning(f"[{code}] 从 Tushare 获取股票名称失败: {e}")
+                        if basic_info.industry:
+                            logger.debug(f"[{code}] 行业: {basic_info.industry}, 地域: {basic_info.area}, 市场: {basic_info.market}")
+            except Exception as e:
+                # Tushare 获取失败是预期情况（可能未配置 token），使用 DEBUG 级别
+                logger.debug(f"[{code}] Tushare 获取名称失败: {e}")
 
             # Step 2: 如果还是没有名称，尝试从 AkShare 获取实时行情
-            realtime_quote: Optional[RealtimeQuote] = None
             if not stock_name or stock_name.startswith('股票'):
                 try:
                     realtime_quote = self.akshare_fetcher.get_realtime_quote(code)
@@ -258,12 +260,13 @@ class StockAnalysisPipeline:
                         logger.info(f"[{code}] 实时行情: 价格={realtime_quote.price}, "
                                   f"量比={realtime_quote.volume_ratio}, 换手率={realtime_quote.turnover_rate}%")
                 except Exception as e:
-                    logger.warning(f"[{code}] 获取实时行情失败: {e}")
+                    # AkShare 也可能失败（网络问题、SSL错误等），使用 DEBUG 级别
+                    logger.debug(f"[{code}] AkShare 获取名称失败: {e}")
 
-            # 如果还是没有名称，使用代码作为名称
+            # Step 3: 如果还是没有名称，使用默认名称
             if not stock_name:
                 stock_name = f'股票{code}'
-                logger.warning(f"[{code}] 未找到股票名称，使用默认名称: {stock_name}")
+                logger.debug(f"[{code}] 使用默认名称: {stock_name}")
             
             # Step 2: 获取筹码分布
             chip_data: Optional[ChipDistribution] = None

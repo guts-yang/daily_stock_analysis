@@ -274,30 +274,70 @@ class Config:
 
     def refresh_stock_list(self) -> None:
         """
-        Hot-load STOCK_LIST env var and update current watchlist.
-        
-        Supports two ways:
-        1) .env file (local/dev/cron) - effective next run
-        2) OS environment (CI/Docker) - fixed on startup
+        Hot-load stock list from multiple sources with priority.
+
+        Priority (same as _load_from_env):
+        1. Feishu Bitable (if USE_FEISHU_BITABLE=true)
+        2. Text file (if STOCK_LIST_FILE is set)
+        3. Environment variable (STOCK_LIST) from .env or OS env
+        4. Default list
         """
-        # Prefer .env value if present; otherwise fallback to OS environment
-        env_path = Path(__file__).parent / '.env'
-        stock_list_str = ''
-        if env_path.exists():
-            env_values = dotenv_values(env_path)
-            stock_list_str = (env_values.get('STOCK_LIST') or '').strip()
+        import logging
+        logger = logging.getLogger(__name__)
 
-        if not stock_list_str:
-            stock_list_str = os.getenv('STOCK_LIST', '')
+        stock_list = []
+        stock_list_file = os.getenv('STOCK_LIST_FILE', '')
+        use_feishu_bitable = os.getenv('USE_FEISHU_BITABLE', 'false').lower() == 'true'
 
-        stock_list = [
-            code.strip()
-            for code in stock_list_str.split(',')
-            if code.strip()
-        ]
+        # 优先级 1: 从飞书多维表格读取
+        if use_feishu_bitable:
+            try:
+                from feishu_bitable import get_stock_list_from_feishu
+                stock_list = get_stock_list_from_feishu()
+                if stock_list:
+                    logger.info(f"从飞书多维表格刷新股票列表: {len(stock_list)} 只")
+            except Exception as e:
+                logger.warning(f"从飞书多维表格刷新股票列表失败: {e}")
 
-        if not stock_list:        
-            stock_list = ['000001']
+        # 优先级 2: 从文本文件读取
+        if not stock_list and stock_list_file:
+            file_path = Path(stock_list_file)
+            if file_path.exists():
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        stock_list = [
+                            line.strip()
+                            for line in f.readlines()
+                            if line.strip() and not line.strip().startswith('#')
+                        ]
+                    logger.info(f"从文件 {stock_list_file} 读取到 {len(stock_list)} 只股票")
+                except Exception as e:
+                    logger.warning(f"从文件 {stock_list_file} 读取股票列表失败: {e}")
+
+        # 优先级 3: 从环境变量读取（支持 .env 文件和 OS 环境变量）
+        if not stock_list:
+            env_path = Path(__file__).parent / '.env'
+            stock_list_str = ''
+            if env_path.exists():
+                env_values = dotenv_values(env_path)
+                stock_list_str = (env_values.get('STOCK_LIST') or '').strip()
+
+            if not stock_list_str:
+                stock_list_str = os.getenv('STOCK_LIST', '')
+
+            if stock_list_str:
+                stock_list = [
+                    code.strip()
+                    for code in stock_list_str.split(',')
+                    if code.strip()
+                ]
+                if stock_list:
+                    logger.info(f"从环境变量读取到 {len(stock_list)} 只股票")
+
+        # 默认列表
+        if not stock_list:
+            stock_list = ['600519', '000001', '300750']
+            logger.info("使用默认股票列表")
 
         self.stock_list = stock_list
     
